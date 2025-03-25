@@ -62,6 +62,7 @@ The decrypted PS3 disc images will work with [RPCS3](https://rpcs3.net/) emulato
 ## 📝 Requirements
 
 - Microsoft Windows OS with [net 6.0 desktop runtime](https://dotnet.microsoft.com/download/dotnet/6.0).
+- [Microsoft Visual C++ 2010 runtime (x86)](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist?view=msvc-170#visual-studio-2010-vc-100-sp1-no-longer-supported) (for running **ps3dec.exe**)
 
 ## 🤖 Getting Started
 
