@@ -102,11 +102,12 @@ Partial Class Form1
         Me.Button_Abort.UseVisualStyleBackColor = True
         ' 
         ' TextBox_PS3Dec_Output
-        ' 
+        '
         Me.TextBox_PS3Dec_Output.BackColor = Color.FromArgb(CByte(30), CByte(30), CByte(30))
         Me.TextBox_PS3Dec_Output.BorderStyle = BorderStyle.FixedSingle
         Me.TextBox_PS3Dec_Output.Dock = DockStyle.Fill
         Me.TextBox_PS3Dec_Output.Enabled = False
+        Me.TextBox_PS3Dec_Output.Font = New Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point)
         Me.TextBox_PS3Dec_Output.ForeColor = Color.IndianRed
         Me.TextBox_PS3Dec_Output.Location = New Point(3, 293)
         Me.TextBox_PS3Dec_Output.Multiline = True
@@ -144,14 +145,14 @@ Partial Class Form1
         Me.Panel_Buttons.TabIndex = 0
         ' 
         ' Form1
-        ' 
-        Me.AutoScaleDimensions = New SizeF(8F, 20F)
-        Me.AutoScaleMode = AutoScaleMode.Font
+        '
+        Me.AutoScaleDimensions = New SizeF(96F, 96F)
+        Me.AutoScaleMode = AutoScaleMode.Dpi
         Me.ClientSize = New Size(648, 492)
         Me.Controls.Add(Me.TableLayoutPanel1)
         Me.Controls.Add(Me.StatusStrip1)
         Me.DoubleBuffered = True
-        Me.Font = New Font("Segoe UI", 11F, FontStyle.Regular, GraphicsUnit.Point)
+        Me.Font = New Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point)
         Me.Icon = CType(resources.GetObject("$this.Icon"), Icon)
         Me.Name = "Form1"
         Me.StartPosition = FormStartPosition.CenterScreen

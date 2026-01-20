@@ -68,6 +68,13 @@ after they are used for successful decryption.")>
     <DefaultValue(False)>
     Public Property DeleteKeysAfterUse As Boolean
 
+    <Category("2) Clean up")>
+    <DisplayName("Extract ISOs after decryption")>
+    <Description("If set to True, decrypted PS3 ISO files will be automatically extracted
+after all decryption operations complete successfully.")>
+    <DefaultValue(False)>
+    Public Property ExtractISOsAfterDecryption As Boolean
+
     <Category("3) User-Interface")>
     <DisplayName("Compact Mode")>
     <Description("Enable or disable compact view mode.")>
@@ -138,6 +145,7 @@ if 'Remember current settings' option is set to True.")>
         ' 2) Clean up group
         Me.DeleteDecryptedISOs = False
         Me.DeleteKeysAfterUse = False
+        Me.ExtractISOsAfterDecryption = False
 
         ' 3) User-Interface group
         Me.CompactMode = False

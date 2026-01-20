@@ -125,7 +125,19 @@ Namespace My
                 Me("DeleteKeysAfterUse") = value
             End Set
         End Property
-        
+
+        <Global.System.Configuration.UserScopedSettingAttribute(),  _
+         Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),  _
+         Global.System.Configuration.DefaultSettingValueAttribute("False")>  _
+        Public Property ExtractISOsAfterDecryption() As Boolean
+            Get
+                Return CType(Me("ExtractISOsAfterDecryption"),Boolean)
+            End Get
+            Set
+                Me("ExtractISOsAfterDecryption") = value
+            End Set
+        End Property
+
         <Global.System.Configuration.UserScopedSettingAttribute(),  _
          Global.System.Diagnostics.DebuggerNonUserCodeAttribute(),  _
          Global.System.Configuration.DefaultSettingValueAttribute("False")>  _

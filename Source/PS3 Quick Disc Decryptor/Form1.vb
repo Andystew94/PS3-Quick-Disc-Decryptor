@@ -238,6 +238,11 @@ Friend NotInheritable Class Form1
                 End If
             Next
         End If
+
+        ' Extract ISOs if option is enabled and decryption wasn't cancelled
+        If Form1.Settings.ExtractISOsAfterDecryption AndAlso Not e.Cancel Then
+            Me.ExtractDecryptedISOs()
+        End If
     End Sub
 
     Private Sub BackgroundWorker1_RunWorkerCompleted(sender As Object, e As RunWorkerCompletedEventArgs) _
@@ -257,8 +262,14 @@ Friend NotInheritable Class Form1
         ElseIf e.Cancelled Then
             Me.UpdateStatus("Decryption procedure cancelled due an error.", writeToLogFile:=True, TraceEventType.Stop)
         Else
-            Me.UpdateStatus("Decryption procedure completed.", writeToLogFile:=False)
-            Form1.ShowMessageBoxInUIThread(Me, My.Application.Info.Title, "Decryption procedure completed.", MessageBoxIcon.Information)
+            Me.UpdateStatus("Decryption procedure completed.", writeToLogFile:=True)
+
+            Dim completionMessage As String = "Decryption procedure completed."
+            If Form1.Settings.ExtractISOsAfterDecryption Then
+                completionMessage &= vbCrLf & "ISO extraction completed."
+            End If
+
+            Form1.ShowMessageBoxInUIThread(Me, My.Application.Info.Title, completionMessage, MessageBoxIcon.Information)
         End If
 
         Try
@@ -925,6 +936,7 @@ Friend NotInheritable Class Form1
                 My.Settings.OutputDir = Form1.Settings.OutputDir.FullName
                 My.Settings.DeleteDecryptedISOs = Form1.Settings.DeleteDecryptedISOs
                 My.Settings.DeleteKeysAfterUse = Form1.Settings.DeleteKeysAfterUse
+                My.Settings.ExtractISOsAfterDecryption = Form1.Settings.ExtractISOsAfterDecryption
                 My.Settings.CompactMode = Form1.Settings.CompactMode
                 My.Settings.RememberSizeAndPosition = Form1.Settings.RememberSizeAndPosition
                 If My.Settings.RememberSizeAndPosition AndAlso Me.WindowState <> FormWindowState.Minimized Then
@@ -955,6 +967,7 @@ Friend NotInheritable Class Form1
                 Form1.Settings.OutputDir = New DirectoryInfo(My.Settings.OutputDir.Replace(dirPath, "."))
                 Form1.Settings.DeleteDecryptedISOs = My.Settings.DeleteDecryptedISOs
                 Form1.Settings.DeleteKeysAfterUse = My.Settings.DeleteKeysAfterUse
+                Form1.Settings.ExtractISOsAfterDecryption = My.Settings.ExtractISOsAfterDecryption
                 Form1.Settings.CompactMode = My.Settings.CompactMode
                 Form1.Settings.RememberSizeAndPosition = My.Settings.RememberSizeAndPosition
                 If Form1.Settings.RememberSizeAndPosition Then
@@ -993,6 +1006,126 @@ Friend NotInheritable Class Form1
         Return buffer.ToString()
 
     End Function
+
+    ''' <summary>
+    ''' Extracts all decrypted ISO files in the output directory.
+    ''' </summary>
+    Private Sub ExtractDecryptedISOs()
+        Try
+            Me.UpdateStatus("Starting ISO extraction...", writeToLogFile:=True)
+
+            Dim outputDir As DirectoryInfo = Form1.Settings.OutputDir
+            If Not outputDir.Exists Then
+                Me.UpdateStatus("Output directory does not exist. Skipping extraction.", writeToLogFile:=True, TraceEventType.Warning)
+                Return
+            End If
+
+            ' Get all ISO files in the output directory
+            Dim isoFiles As FileInfo() = outputDir.GetFiles("*.iso", SearchOption.TopDirectoryOnly)
+            If isoFiles.Length = 0 Then
+                Me.UpdateStatus("No ISO files found for extraction.", writeToLogFile:=True)
+                Return
+            End If
+
+            Me.UpdateStatus($"Found {isoFiles.Length} ISO file(s) to extract.", writeToLogFile:=True)
+
+            Dim successCount As Integer = 0
+            Dim failCount As Integer = 0
+
+            For Each isoFile As FileInfo In isoFiles
+                Try
+                    Me.UpdateStatus($"Extracting: {isoFile.Name}...", writeToLogFile:=True)
+
+                    ' Create extraction directory with same name as ISO
+                    Dim extractDirName As String = Path.GetFileNameWithoutExtension(isoFile.Name)
+                    Dim extractDirPath As String = Path.Combine(outputDir.FullName, extractDirName)
+                    Dim extractDir As New DirectoryInfo(extractDirPath)
+
+                    If extractDir.Exists Then
+                        Me.UpdateStatus($"Extraction directory already exists, skipping: {extractDirName}", writeToLogFile:=True, TraceEventType.Warning)
+                        Continue For
+                    End If
+
+                    extractDir.Create()
+
+                    ' Use DiscUtils to read and extract the ISO
+                    Using isoStream As FileStream = isoFile.OpenRead(),
+                          cd As New CDReader(isoStream, joliet:=True)
+
+                        ' Extract all files recursively with file counting
+                        Dim fileCount As Integer = 0
+                        Me.ExtractDirectory(cd, cd.Root.FullName, extractDirPath, fileCount)
+                        Me.UpdateStatus($"  Total: {fileCount} files extracted", writeToLogFile:=False)
+                    End Using
+
+                    successCount += 1
+                    Me.UpdateStatus($"Successfully extracted: {isoFile.Name}", writeToLogFile:=True)
+
+                Catch ex As Exception
+                    failCount += 1
+                    Me.UpdateStatus($"Error extracting {isoFile.Name}: {ex.Message}", writeToLogFile:=True, TraceEventType.Error)
+                End Try
+            Next
+
+            Me.UpdateStatus($"ISO extraction completed. Success: {successCount}, Failed: {failCount}", writeToLogFile:=True)
+
+        Catch ex As Exception
+            Me.UpdateStatus($"Error during ISO extraction: {ex.Message}", writeToLogFile:=True, TraceEventType.Error)
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' Recursively extracts a directory from an ISO image.
+    ''' </summary>
+    Private Sub ExtractDirectory(cd As CDReader, sourceDir As String, targetDir As String, ByRef fileCount As Integer)
+        ' Extract all files in current directory
+        For Each fileName As String In cd.GetFiles(sourceDir)
+            Try
+                ' Get filename and strip ISO9660 version suffix (;1, ;2, etc.)
+                Dim cleanFileName As String = Path.GetFileName(fileName)
+                Dim semicolonIndex As Integer = cleanFileName.LastIndexOf(";"c)
+                If semicolonIndex > 0 Then
+                    cleanFileName = cleanFileName.Substring(0, semicolonIndex)
+                End If
+
+                Dim targetPath As String = Path.Combine(targetDir, cleanFileName)
+
+                ' Update status every 10 files to reduce UI overhead
+                fileCount += 1
+                If fileCount Mod 10 = 0 Then
+                    Me.UpdateStatus($"  Extracted {fileCount} files...", writeToLogFile:=False)
+                End If
+
+                Using sourceStream As Stream = cd.OpenFile(fileName, FileMode.Open),
+                      targetStream As FileStream = File.Create(targetPath)
+                    ' Use larger buffer for better performance
+                    Dim buffer(81920 - 1) As Byte ' 80KB buffer
+                    Dim bytesRead As Integer
+                    Do
+                        bytesRead = sourceStream.Read(buffer, 0, buffer.Length)
+                        If bytesRead > 0 Then
+                            targetStream.Write(buffer, 0, bytesRead)
+                        End If
+                    Loop While bytesRead > 0
+                End Using
+
+            Catch ex As Exception
+                Me.UpdateStatus($"  Warning: Failed to extract {fileName}: {ex.Message}", writeToLogFile:=True, TraceEventType.Warning)
+            End Try
+        Next
+
+        ' Recursively extract subdirectories
+        For Each dirName As String In cd.GetDirectories(sourceDir)
+            Try
+                Dim dirBaseName As String = Path.GetFileName(dirName.TrimEnd("\"c, "/"c))
+                Dim targetSubDir As String = Path.Combine(targetDir, dirBaseName)
+                Directory.CreateDirectory(targetSubDir)
+                Me.ExtractDirectory(cd, dirName, targetSubDir, fileCount)
+            Catch ex As Exception
+                Me.UpdateStatus($"  Warning: Failed to extract directory {dirName}: {ex.Message}", writeToLogFile:=True, TraceEventType.Warning)
+            End Try
+        Next
+    End Sub
 
 #End Region
 
