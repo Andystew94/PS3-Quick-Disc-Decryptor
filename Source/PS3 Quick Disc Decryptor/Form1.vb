@@ -16,7 +16,6 @@ Imports DevCase.Win32
 Imports DevCase.Win32.Enums
 
 Imports DiscUtils
-
 Imports DiscUtils.Iso9660
 
 Imports Microsoft.WindowsAPICodePack.Taskbar
@@ -1048,15 +1047,13 @@ Friend NotInheritable Class Form1
 
                     extractDir.Create()
 
-                    ' Use DiscUtils to read and extract the ISO
-                    Using isoStream As FileStream = isoFile.OpenRead(),
-                          cd As New CDReader(isoStream, joliet:=True)
-
-                        ' Extract all files recursively with file counting
-                        Dim fileCount As Integer = 0
-                        Me.ExtractDirectory(cd, cd.Root.FullName, extractDirPath, fileCount)
-                        Me.UpdateStatus($"  Total: {fileCount} files extracted", writeToLogFile:=False)
-                    End Using
+                    ' Choose extraction method based on settings
+                    Select Case Form1.Settings.IsoExtractionMethod
+                        Case IsoExtractionMethod.SevenZip
+                            Me.ExtractISOUsing7Zip(isoFile, extractDirPath)
+                        Case IsoExtractionMethod.DiscUtils
+                            Me.ExtractISOUsingDiscUtils(isoFile, extractDirPath)
+                    End Select
 
                     successCount += 1
                     Me.UpdateStatus($"Successfully extracted: {isoFile.Name}", writeToLogFile:=True)
@@ -1075,9 +1072,22 @@ Friend NotInheritable Class Form1
     End Sub
 
     ''' <summary>
-    ''' Recursively extracts a directory from an ISO image.
+    ''' Extracts an ISO file using DiscUtils library.
     ''' </summary>
-    Private Sub ExtractDirectory(cd As CDReader, sourceDir As String, targetDir As String, ByRef fileCount As Integer)
+    Private Sub ExtractISOUsingDiscUtils(isoFile As FileInfo, extractDirPath As String)
+        Using isoStream As FileStream = isoFile.OpenRead(),
+              cd As New CDReader(isoStream, joliet:=True)
+
+            Dim fileCount As Integer = 0
+            Me.ExtractDirectoryDiscUtils(cd, cd.Root.FullName, extractDirPath, fileCount)
+            Me.UpdateStatus($"  Total: {fileCount} files extracted", writeToLogFile:=False)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' Recursively extracts a directory from an ISO image using DiscUtils.
+    ''' </summary>
+    Private Sub ExtractDirectoryDiscUtils(cd As CDReader, sourceDir As String, targetDir As String, ByRef fileCount As Integer)
         ' Extract all files in current directory
         For Each fileName As String In cd.GetFiles(sourceDir)
             Try
@@ -1120,11 +1130,53 @@ Friend NotInheritable Class Form1
                 Dim dirBaseName As String = Path.GetFileName(dirName.TrimEnd("\"c, "/"c))
                 Dim targetSubDir As String = Path.Combine(targetDir, dirBaseName)
                 Directory.CreateDirectory(targetSubDir)
-                Me.ExtractDirectory(cd, dirName, targetSubDir, fileCount)
+                Me.ExtractDirectoryDiscUtils(cd, dirName, targetSubDir, fileCount)
             Catch ex As Exception
                 Me.UpdateStatus($"  Warning: Failed to extract directory {dirName}: {ex.Message}", writeToLogFile:=True, TraceEventType.Warning)
             End Try
         Next
+    End Sub
+
+    ''' <summary>
+    ''' Extracts an ISO file using 7-Zip command line (fastest).
+    ''' </summary>
+    Private Sub ExtractISOUsing7Zip(isoFile As FileInfo, extractDirPath As String)
+        ' Check if 7z.exe exists
+        If Not Form1.Settings.SevenZipExePath.Exists Then
+            Throw New FileNotFoundException($"7z.exe not found at: {Form1.Settings.SevenZipExePath.FullName}")
+        End If
+
+        ' Build 7-Zip command: 7z x "iso_path" -o"output_path" -y
+        Dim arguments As String = $"x ""{isoFile.FullName}"" -o""{extractDirPath}"" -y"
+
+        Me.UpdateStatus($"  Running: 7z {arguments}", writeToLogFile:=True)
+
+        ' Create process to run 7-Zip
+        Dim psi As New ProcessStartInfo() With {
+            .FileName = Form1.Settings.SevenZipExePath.FullName,
+            .Arguments = arguments,
+            .UseShellExecute = False,
+            .RedirectStandardOutput = True,
+            .RedirectStandardError = True,
+            .CreateNoWindow = True,
+            .WorkingDirectory = extractDirPath
+        }
+
+        Using proc As Process = Process.Start(psi)
+            ' Read output for progress tracking
+            Dim output As String = proc.StandardOutput.ReadToEnd()
+            Dim errorOutput As String = proc.StandardError.ReadToEnd()
+
+            proc.WaitForExit()
+
+            If proc.ExitCode <> 0 Then
+                Throw New Exception($"7-Zip extraction failed with exit code {proc.ExitCode}. Error: {errorOutput}")
+            End If
+
+            ' Count extracted files
+            Dim filesExtracted As Integer = Directory.GetFiles(extractDirPath, "*", SearchOption.AllDirectories).Length
+            Me.UpdateStatus($"  Total: {filesExtracted} files extracted", writeToLogFile:=False)
+        End Using
     End Sub
 
 #End Region

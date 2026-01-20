@@ -7,6 +7,13 @@ Imports System.Drawing.Design
 Imports System.Globalization
 Imports System.IO
 
+Friend Enum IsoExtractionMethod
+    <Description("Use DiscUtils library (slower, pure .NET)")>
+    DiscUtils = 0
+    <Description("Use 7-Zip command line (fastest, requires 7z.exe)")>
+    SevenZip = 1
+End Enum
+
 Friend NotInheritable Class ProgramSettings
 
     <Category("1) Resources")>
@@ -74,6 +81,21 @@ after they are used for successful decryption.")>
 after all decryption operations complete successfully.")>
     <DefaultValue(False)>
     Public Property ExtractISOsAfterDecryption As Boolean
+
+    <Category("2) Clean up")>
+    <DisplayName("ISO extraction method")>
+    <Description("Choose the method used for ISO extraction.
+7-Zip: Fastest, requires 7z.exe (recommended).
+DiscUtils: Slower, pure .NET library.")>
+    <DefaultValue(IsoExtractionMethod.SevenZip)>
+    Public Property IsoExtractionMethod As IsoExtractionMethod = IsoExtractionMethod.SevenZip
+
+    <Category("2) Clean up")>
+    <DisplayName("7-Zip executable path")>
+    <Description("Path to 7z.exe for ISO extraction. Required if using 7-Zip method.
+Common locations: C:\Program Files\7-Zip\7z.exe")>
+    <Editor(GetType(SevenZipFileDialogEditor), GetType(UITypeEditor))>
+    Public Property SevenZipExePath As FileInfo = New FileInfo("C:\Program Files\7-Zip\7z.exe")
 
     <Category("3) User-Interface")>
     <DisplayName("Compact Mode")>
@@ -146,6 +168,8 @@ if 'Remember current settings' option is set to True.")>
         Me.DeleteDecryptedISOs = False
         Me.DeleteKeysAfterUse = False
         Me.ExtractISOsAfterDecryption = False
+        Me.IsoExtractionMethod = IsoExtractionMethod.SevenZip
+        Me.SevenZipExePath = New FileInfo("C:\Program Files\7-Zip\7z.exe")
 
         ' 3) User-Interface group
         Me.CompactMode = False
