@@ -338,8 +338,8 @@ Friend NotInheritable Class Form1
     End Function
 
     ''' <summary>
-    ''' Creates a <see cref="Dictionary(Of FileInfo, Fileinfo)"/> with 
-    ''' <see langword="Key"/> = Encrypted ISO, and <see langword="Value"/> = Decryption key. 
+    ''' Creates a <see cref="Dictionary(Of FileInfo, Fileinfo)"/> with
+    ''' <see langword="Key"/> = Encrypted ISO, and <see langword="Value"/> = Decryption key.
     ''' </summary>
     ''' <returns><see langword="True"/> if successful, <see langword="False"/> otherwise.</returns>
     Private Function BuildisoAndKeyPairs() As Boolean
@@ -347,16 +347,107 @@ Friend NotInheritable Class Form1
         Me.UpdateStatus("Matching encrypted PS3 ISOs with decryption keys...", writeToLogFile:=True)
         Try
             Me.isoAndKeyPairs = New Dictionary(Of FileInfo, FileInfo)
+            Dim unmatchedIsos As New List(Of FileInfo)
+            Dim unmatchedKeys As New List(Of FileInfo)(Me.keys)
+
+            ' Phase 1: Exact matching (existing logic)
             For Each iso As FileInfo In Me.isos
-                Dim match As FileInfo =
-                    (From dkey As FileInfo In Me.keys
+                Dim exactMatch As FileInfo =
+                    (From dkey As FileInfo In unmatchedKeys
                      Where Path.GetFileNameWithoutExtension(dkey.Name).Equals(Path.GetFileNameWithoutExtension(iso.Name), StringComparison.OrdinalIgnoreCase)
                     ).SingleOrDefault()
 
-                If match IsNot Nothing Then
-                    Me.isoAndKeyPairs.Add(iso, match)
+                If exactMatch IsNot Nothing Then
+                    Me.isoAndKeyPairs.Add(iso, exactMatch)
+                    unmatchedKeys.Remove(exactMatch)
+                Else
+                    unmatchedIsos.Add(iso)
                 End If
             Next iso
+
+            ' Phase 2: Fuzzy matching for unmatched ISOs
+            If unmatchedIsos.Any() AndAlso unmatchedKeys.Any() Then
+                Me.UpdateStatus($"Attempting smart match for {unmatchedIsos.Count} unmatched ISO(s)...", writeToLogFile:=True)
+
+                Dim applySkipToAll As Boolean = False
+                Dim applyAutoMatchToAll As Boolean = False
+
+                For Each iso As FileInfo In unmatchedIsos.ToList() ' ToList to allow modification during iteration
+                    If Me.cancelRequested Then Exit For
+
+                    ' Skip if user chose "Apply Skip to All"
+                    If applySkipToAll Then Continue For
+
+                    ' Find fuzzy matches
+                    Dim matches As List(Of DevCase.Matching.MatchResult) =
+                        DevCase.Matching.FuzzyMatcher.FindMatches(iso, unmatchedKeys, minConfidence:=0.5, maxResults:=5)
+
+                    If Not matches.Any() Then
+                        ' No suggestions available
+                        Me.UpdateStatus($"No suitable matches found for: {iso.Name}", writeToLogFile:=True)
+                        Continue For
+                    End If
+
+                    ' Auto-accept high confidence matches if user chose "Apply to All"
+                    If applyAutoMatchToAll AndAlso matches.First().ConfidenceScore >= 0.9 Then
+                        Dim topMatch As DevCase.Matching.MatchResult = matches.First()
+                        Me.isoAndKeyPairs.Add(iso, topMatch.KeyFile)
+                        unmatchedKeys.Remove(topMatch.KeyFile)
+                        unmatchedIsos.Remove(iso)
+                        Me.UpdateStatus($"Auto-matched {iso.Name} with {topMatch.KeyFile.Name} ({topMatch.GetConfidencePercentage()}%)", writeToLogFile:=True)
+                        Continue For
+                    End If
+
+                    ' Show dialog to user (thread-safe invocation)
+                    Dim selectedMatch As DevCase.Matching.MatchResult = Nothing
+                    Dim userChoice As DevCase.Matching.MatchDialogResult = DevCase.Matching.MatchDialogResult.Skip
+                    Dim applyToAll As Boolean = False
+
+                    Me.Invoke(Sub()
+                                  Using dialog As New DevCase.Matching.MatchSuggestionDialog(iso, matches)
+                                      Dim dialogResult As DialogResult = dialog.ShowDialog(Me)
+                                      userChoice = dialog.UserChoice
+                                      applyToAll = dialog.ApplyToAll
+
+                                      Select Case userChoice
+                                          Case DevCase.Matching.MatchDialogResult.AcceptSuggestion
+                                              selectedMatch = dialog.SelectedMatch
+
+                                          Case DevCase.Matching.MatchDialogResult.ManualSelect
+                                              ' Show file picker for manual selection
+                                              Using openDialog As New OpenFileDialog()
+                                                  openDialog.Title = $"Select decryption key for {iso.Name}"
+                                                  openDialog.InitialDirectory = Form1.Settings.DecryptionKeysDir.FullName
+                                                  openDialog.Filter = "Key Files|*.dkey;*.txt;*.zip|All Files|*.*"
+                                                  openDialog.RestoreDirectory = True
+
+                                                  If openDialog.ShowDialog(Me) = DialogResult.OK Then
+                                                      Dim manualKey As New FileInfo(openDialog.FileName)
+                                                      selectedMatch = New DevCase.Matching.MatchResult(iso, manualKey, 1.0, "Manual selection")
+                                                  End If
+                                              End Using
+                                      End Select
+                                  End Using
+                              End Sub)
+
+                    ' Process user choice
+                    If selectedMatch IsNot Nothing Then
+                        Me.isoAndKeyPairs.Add(iso, selectedMatch.KeyFile)
+                        unmatchedKeys.Remove(selectedMatch.KeyFile)
+                        unmatchedIsos.Remove(iso)
+                        Me.UpdateStatus($"Matched {iso.Name} with {selectedMatch.KeyFile.Name}", writeToLogFile:=True)
+
+                        If applyToAll AndAlso userChoice = DevCase.Matching.MatchDialogResult.AcceptSuggestion Then
+                            applyAutoMatchToAll = True
+                        End If
+                    Else
+                        ' User skipped
+                        If applyToAll Then
+                            applySkipToAll = True
+                        End If
+                    End If
+                Next iso
+            End If
 
         Catch ex As Exception
             Form1.ShowMessageBoxInUIThread(Me, "Error matching encrypted PS3 ISOs with decryption keys", ex.Message, MessageBoxIcon.Error)
