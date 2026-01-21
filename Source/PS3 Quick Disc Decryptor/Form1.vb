@@ -606,9 +606,10 @@ Friend NotInheritable Class Form1
 
             AddHandler Me.ps3DecProcess.ErrorDataReceived, Sub(sender As Object, e As DataReceivedEventArgs)
                 If e.Data IsNot Nothing Then
-                    outputBuilder.AppendLine($"ERROR: {e.Data}")
+                    ' PS3Dec.exe writes all output to stderr, so treat it as normal output
+                    outputBuilder.AppendLine(e.Data)
                     Me.TextBox_PS3Dec_Output.Invoke(Sub()
-                        Me.TextBox_PS3Dec_Output.AppendText($"ERROR: {e.Data}{Environment.NewLine}")
+                        Me.TextBox_PS3Dec_Output.AppendText(e.Data & Environment.NewLine)
                         Me.TextBox_PS3Dec_Output.SelectionStart = Me.TextBox_PS3Dec_Output.Text.Length
                         Me.TextBox_PS3Dec_Output.ScrollToCaret()
                     End Sub)
