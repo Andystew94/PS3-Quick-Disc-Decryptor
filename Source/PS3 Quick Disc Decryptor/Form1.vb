@@ -233,18 +233,30 @@ Friend NotInheritable Class Form1
             Dim completionMessage As New StringBuilder()
             completionMessage.AppendLine($"Decryption Results:")
             completionMessage.AppendLine($"  Success: {successCount}/{totalCount}")
-            If failedCount > 0 Then
-                completionMessage.AppendLine($"  Failed: {failedCount}/{totalCount}")
+            completionMessage.AppendLine($"  Failed: {failedCount}/{totalCount}")
+            completionMessage.AppendLine()
+
+            ' List successful files
+            If successCount > 0 Then
+                completionMessage.AppendLine("Successful files:")
+                For Each result As DecryptionResult In successResults
+                    completionMessage.AppendLine($"  ✓ {result.IsoFile.Name}")
+                Next
                 completionMessage.AppendLine()
+            End If
+
+            ' List failed files
+            If failedCount > 0 Then
                 completionMessage.AppendLine("Failed files:")
                 For Each result As DecryptionResult In failedResults
-                    completionMessage.AppendLine($"  • {result.IsoFile.Name}")
+                    completionMessage.AppendLine($"  ✗ {result.IsoFile.Name}")
                     If Not String.IsNullOrEmpty(result.ErrorMessage) Then
                         completionMessage.AppendLine($"    Reason: {result.ErrorMessage}")
                     Else
                         completionMessage.AppendLine($"    Exit code: {result.ExitCode}")
                     End If
                 Next
+                completionMessage.AppendLine()
             End If
 
             If Form1.Settings.ExtractISOsAfterDecryption AndAlso failedCount = 0 Then
