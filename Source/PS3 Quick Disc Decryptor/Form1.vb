@@ -40,14 +40,7 @@ Friend NotInheritable Class Form1
     Private ReadOnly tempFolderPath As String = Path.Combine(Path.GetTempPath, My.Application.Info.Title)
 
     ''' <summary>
-    ''' CMD process to embed its window in the UI, and where PS3Dec.exe will run.
-    ''' <para></para>
-    ''' This is only used when <see cref="Global.ProgramSettings.CompactMode"/> is False.
-    ''' </summary>
-    Private cmdProcess As Process
-
-    ''' <summary>
-    ''' PS3Dec.exe process. This is only used when <see cref="Global.ProgramSettings.CompactMode"/> is True.
+    ''' PS3Dec.exe process with redirected output to TextBox.
     ''' </summary>
     Private ps3DecProcess As Process
 
@@ -60,12 +53,6 @@ Friend NotInheritable Class Form1
     ''' Flag to request user cancellation of the asynchronous decryption procedure.
     ''' </summary>
     Private cancelRequested As Boolean
-
-    ''' <summary>
-    ''' Keeps track of the row height where the <see cref="Form1.TextBox_PS3Dec_Output"/> control is,
-    ''' for toggling between compact and regular view mode.
-    ''' </summary>
-    Private lastCmdRowHeight As Integer
 
 #End Region
 
@@ -105,14 +92,13 @@ Friend NotInheritable Class Form1
     Handles MyBase.FormClosing
 
         If e.CloseReason = CloseReason.UserClosing Then
-            If Not Me.cmdProcess?.HasExited OrElse Not Me.ps3DecProcess?.HasExited Then
+            If Not Me.ps3DecProcess?.HasExited Then
                 Dim question As DialogResult =
                     MessageBox.Show(Me, $"PS3Dec.exe is currently running and writing a decrypted disc in the output directory, if you exit this program PS3Dec.exe process will be killed.{Environment.NewLine & Environment.NewLine}Do you really want to exit?.", My.Application.Info.Title,
                                     MessageBoxButtons.YesNo, MessageBoxIcon.Exclamation)
 
                 If question = DialogResult.Yes Then
                     Try
-                        Me.cmdProcess?.Kill(entireProcessTree:=True)
                         Me.ps3DecProcess?.Kill(entireProcessTree:=False)
                         Me.UpdateStatus("PS3Dec.exe was killed on user demand (force application closure).", writeToLogFile:=True)
                     Catch ex As Exception
@@ -154,52 +140,6 @@ Friend NotInheritable Class Form1
         End If
     End Sub
 
-    Private Sub TextBox_PS3Dec_Output_VisibleChanged(sender As Object, e As EventArgs) _
-    Handles TextBox_PS3Dec_Output.VisibleChanged
-
-        If Me.MinimumSize = Size.Empty Then
-            ' Prevents continuing if the main form was not shown once.
-            Return
-        End If
-
-        Dim tb As TextBox = DirectCast(sender, TextBox)
-
-        Dim table As TableLayoutPanel = Me.TableLayoutPanel1
-        Dim rowIndex As Integer = table.GetRow(tb)
-        Dim rowStyle As RowStyle = table.RowStyles(rowIndex)
-
-        table.SuspendLayout()
-        If Form1.Settings.CompactMode Then
-            rowStyle.Height = 0 ' percent
-            Dim rowHeight As Integer = table.GetRowHeights()(rowIndex)
-            Me.MinimumSize = New Size(Me.MinimumSize.Width, Me.MinimumSize.Height - rowHeight)
-            Me.Height -= rowHeight
-            Me.lastCmdRowHeight = rowHeight
-        Else
-            rowStyle.Height = 40 ' percent
-            Dim tbHeight As Integer = tb.Height
-            Me.MinimumSize = New Size(Me.MinimumSize.Width, Me.MinimumSize.Height + Me.lastCmdRowHeight)
-        End If
-        table.ResumeLayout(performLayout:=True)
-    End Sub
-
-    Private Sub TableLayoutPanel1_Resize(sender As Object, e As EventArgs) _
-    Handles TableLayoutPanel1.Resize
-
-        If Form1.Settings.CompactMode OrElse Me.cmdProcess Is Nothing Then
-            Exit Sub
-        End If
-
-        Dim hWnd As IntPtr = Me.cmdProcess.MainWindowHandle
-        If hWnd = IntPtr.Zero Then
-            Exit Sub
-        End If
-
-        Dim tb As TextBox = Me.TextBox_PS3Dec_Output
-        If Not NativeMethods.User32.MoveWindow(hWnd, 0, 0, tb.Width, tb.Height, repaint:=True) Then
-            ' Ignore.
-        End If
-    End Sub
 
     Private Sub BackgroundWorker1_DoWork(sender As Object, e As DoWorkEventArgs) _
     Handles BackgroundWorker1.DoWork
@@ -282,7 +222,6 @@ Friend NotInheritable Class Form1
         Me.isos = Nothing
         Me.keys = Nothing
         Me.isoAndKeyPairs = Nothing
-        Me.cmdProcess = Nothing
 
         Me.cancelRequested = False
 
@@ -629,102 +568,70 @@ Friend NotInheritable Class Form1
 
     Private Sub ExecutePS3Dec(pair As KeyValuePair(Of FileInfo, FileInfo), isoFile As FileInfo, dkeyString As String, currentIsoIndex As Integer, totalIsoCount As Integer)
 
-        Dim currentProcess As Process
+        ' Run PS3Dec.exe and capture output to TextBox
+        Me.ps3DecProcess = New Process()
+        With Me.ps3DecProcess
+            .StartInfo.FileName = Form1.Settings.PS3DecExeFile.FullName
+            .StartInfo.Arguments = $"d key ""{dkeyString}"" ""{isoFile.FullName}"" ""{Form1.Settings.OutputDir.FullName}\{isoFile.Name}"""
+            .StartInfo.UseShellExecute = False
+            .StartInfo.CreateNoWindow = True
+            .StartInfo.RedirectStandardOutput = True
+            .StartInfo.RedirectStandardError = True
+            .StartInfo.StandardOutputEncoding = Encoding.UTF8
+            .StartInfo.StandardErrorEncoding = Encoding.UTF8
+        End With
 
-        If Not Form1.Settings.CompactMode Then
-            ' Embed a CMD window instance and run PS3Dec.exe inside.
+        ' Clear TextBox before starting
+        Me.TextBox_PS3Dec_Output.Invoke(Sub()
+                                            Me.TextBox_PS3Dec_Output.Clear()
+                                            Me.TextBox_PS3Dec_Output.AppendText($"Starting PS3Dec.exe...{Environment.NewLine}")
+                                        End Sub)
 
-            Me.cmdProcess = New Process()
-            currentProcess = Me.cmdProcess
-            With Me.cmdProcess
-                .StartInfo.FileName = Environment.GetEnvironmentVariable("COMSPEC")
-                .StartInfo.Arguments = $"/C ""(TIMEOUT /T 1 /NOBREAK)>NUL & ""{Form1.Settings.PS3DecExeFile.FullName}"" d key ""{dkeyString}"" ""{isoFile.FullName}"" ""{Form1.Settings.OutputDir.FullName}\{isoFile.Name}"""""
-                .StartInfo.UseShellExecute = True
-                .StartInfo.CreateNoWindow = False
-                .StartInfo.WindowStyle = ProcessWindowStyle.Minimized
-            End With
-            Try
-                Me.cmdProcess.Start()
-            Catch ex As Exception
-                Form1.ShowMessageBoxInUIThread(Me, "Error executing PS3Dec.exe", ex.Message, MessageBoxIcon.Error)
-                Exit Sub
-            End Try
+        Try
+            Me.ps3DecProcess.Start()
 
-            Dim hWnd As IntPtr = IntPtr.Zero
-            Do Until hWnd <> IntPtr.Zero
-                Thread.Sleep(100)
-                hWnd = Me.cmdProcess.MainWindowHandle
-                If Me.cancelRequested Then
-                    Exit Sub
+            ' Read output asynchronously and update TextBox
+            Dim outputBuilder As New StringBuilder()
+
+            AddHandler Me.ps3DecProcess.OutputDataReceived, Sub(sender As Object, e As DataReceivedEventArgs)
+                If e.Data IsNot Nothing Then
+                    outputBuilder.AppendLine(e.Data)
+                    Me.TextBox_PS3Dec_Output.Invoke(Sub()
+                        Me.TextBox_PS3Dec_Output.AppendText(e.Data & Environment.NewLine)
+                        Me.TextBox_PS3Dec_Output.SelectionStart = Me.TextBox_PS3Dec_Output.Text.Length
+                        Me.TextBox_PS3Dec_Output.ScrollToCaret()
+                    End Sub)
                 End If
-            Loop
+            End Sub
 
-            Dim tb As TextBox = Me.TextBox_PS3Dec_Output
-            tb.Invoke(Sub()
-                          tb.Enabled = False
-                          tb.ResetText()
+            AddHandler Me.ps3DecProcess.ErrorDataReceived, Sub(sender As Object, e As DataReceivedEventArgs)
+                If e.Data IsNot Nothing Then
+                    outputBuilder.AppendLine($"ERROR: {e.Data}")
+                    Me.TextBox_PS3Dec_Output.Invoke(Sub()
+                        Me.TextBox_PS3Dec_Output.AppendText($"ERROR: {e.Data}{Environment.NewLine}")
+                        Me.TextBox_PS3Dec_Output.SelectionStart = Me.TextBox_PS3Dec_Output.Text.Length
+                        Me.TextBox_PS3Dec_Output.ScrollToCaret()
+                    End Sub)
+                End If
+            End Sub
 
-                          Try
-                              If NativeMethods.User32.SetParent(hWnd, tb.Handle) = IntPtr.Zero Then
-                                  Throw New Win32Exception(Marshal.GetLastWin32Error())
-                              End If
+            Me.ps3DecProcess.BeginOutputReadLine()
+            Me.ps3DecProcess.BeginErrorReadLine()
 
-                              If Not NativeMethods.User32.MoveWindow(hWnd, 0, 0, tb.Width, tb.Height, repaint:=True) Then
-                                  Throw New Win32Exception(Marshal.GetLastWin32Error())
-                              End If
+            Me.ps3DecProcess.WaitForExit()
 
-                          Catch ex As Exception
-                              Me.TextBox_PS3Dec_Output.Enabled = True
-                              Me.TextBox_PS3Dec_Output.Text = $"Can't embed CMD window. Don't panic, this is an aesthetic error that does not affect the behavior.{Environment.NewLine & Environment.NewLine}Process Id.: {cmdProcess?.Id}, Main Window Handle: {hWnd}{Environment.NewLine & Environment.NewLine}Error message: {ex.Message}"
+        Catch ex As Exception
+            Form1.ShowMessageBoxInUIThread(Me, "Error executing PS3Dec.exe", ex.Message, MessageBoxIcon.Error)
+            Exit Sub
+        End Try
 
-                          Finally
-                              ' Ensure the CMD window gets visible but also disabled
-                              ' to avoid user interaction and window closure by mistake.
-                              If hWnd <> IntPtr.Zero Then
-                                  NativeMethods.User32.EnableWindow(hWnd, enable:=False)
-                              End If
-                          End Try
-                      End Sub)
-
-            Try
-                Me.cmdProcess.WaitForExit()
-            Catch ex As Exception
-                Form1.ShowMessageBoxInUIThread(Me, "Error executing PS3Dec.exe", ex.Message, MessageBoxIcon.Error)
-                Exit Sub
-            End Try
-
-        Else ' Run PS3Dec.exe directly without embedding a CMD window.
-
-            Me.ps3DecProcess = New Process()
-            currentProcess = Me.ps3DecProcess
-            With Me.ps3DecProcess
-                .StartInfo.FileName = Form1.Settings.PS3DecExeFile.FullName
-                .StartInfo.Arguments = $"d key ""{dkeyString}"" ""{isoFile.FullName}"" ""{Form1.Settings.OutputDir.FullName}\{isoFile.Name}"""
-                .StartInfo.CreateNoWindow = True
-                .StartInfo.RedirectStandardError = True
-            End With
-
-            Try
-                Me.ps3DecProcess.Start()
-                Me.ps3DecProcess.WaitForExit()
-            Catch ex As Exception
-                Form1.ShowMessageBoxInUIThread(Me, "Error executing PS3Dec.exe", ex.Message, MessageBoxIcon.Error)
-                Exit Sub
-            End Try
-        End If
-
-        If currentProcess.ExitCode = 0 Then
+        If Me.ps3DecProcess.ExitCode = 0 Then
             Dim percentage As Integer = CInt(currentIsoIndex / totalIsoCount * 100)
             Me.UpdateStatus($"{percentage}% ({currentIsoIndex}/{totalIsoCount}) | {isoFile.Name} | Decryption completed.", writeToLogFile:=True)
             Me.CanDeleteEncryptedISO(pair.Key)
             Me.CanDeleteDecryptionKey(pair.Value)
         Else
-            If currentProcess.StartInfo.RedirectStandardError Then
-                Dim errorString As String = currentProcess.StandardError.ReadToEnd()
-                Me.UpdateStatus($"PS3Dec.exe failed to decrypt, with process exit code: {currentProcess.ExitCode} and error message: {errorString}", writeToLogFile:=True)
-            Else
-                Me.UpdateStatus($"PS3Dec.exe failed to decrypt, with process exit code: {currentProcess.ExitCode}", writeToLogFile:=True)
-            End If
+            Me.UpdateStatus($"PS3Dec.exe failed to decrypt, with process exit code: {Me.ps3DecProcess.ExitCode}", writeToLogFile:=True)
         End If
     End Sub
 
@@ -936,7 +843,6 @@ Friend NotInheritable Class Form1
                 My.Settings.DeleteDecryptedISOs = Form1.Settings.DeleteDecryptedISOs
                 My.Settings.DeleteKeysAfterUse = Form1.Settings.DeleteKeysAfterUse
                 My.Settings.ExtractISOsAfterDecryption = Form1.Settings.ExtractISOsAfterDecryption
-                My.Settings.CompactMode = Form1.Settings.CompactMode
                 My.Settings.RememberSizeAndPosition = Form1.Settings.RememberSizeAndPosition
                 If My.Settings.RememberSizeAndPosition AndAlso Me.WindowState <> FormWindowState.Minimized Then
                     My.Settings.WindowPosition = Me.Location
@@ -967,7 +873,6 @@ Friend NotInheritable Class Form1
                 Form1.Settings.DeleteDecryptedISOs = My.Settings.DeleteDecryptedISOs
                 Form1.Settings.DeleteKeysAfterUse = My.Settings.DeleteKeysAfterUse
                 Form1.Settings.ExtractISOsAfterDecryption = My.Settings.ExtractISOsAfterDecryption
-                Form1.Settings.CompactMode = My.Settings.CompactMode
                 Form1.Settings.RememberSizeAndPosition = My.Settings.RememberSizeAndPosition
                 If Form1.Settings.RememberSizeAndPosition Then
                     Me.Location = My.Settings.WindowPosition

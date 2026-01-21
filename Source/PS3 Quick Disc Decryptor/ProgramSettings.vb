@@ -98,23 +98,6 @@ Common locations: C:\Program Files\7-Zip\7z.exe")>
     Public Property SevenZipExePath As FileInfo = New FileInfo("C:\Program Files\7-Zip\7z.exe")
 
     <Category("3) User-Interface")>
-    <DisplayName("Compact Mode")>
-    <Description("Enable or disable compact view mode.")>
-    <DefaultValue(False)>
-    Public Property CompactMode As Boolean
-        Get
-            Return Me._compactMode
-        End Get
-        Set(value As Boolean)
-            If value <> Me._compactMode Then
-                Me._compactMode = value
-                My.Forms.Form1.TextBox_PS3Dec_Output.Visible = Not value
-            End If
-        End Set
-    End Property
-    Private _compactMode As Boolean
-
-    <Category("3) User-Interface")>
     <DisplayName("Remember size and position")>
     <Description("Remember last window size and position when the program starts.")>
     <DefaultValue(False)>
@@ -172,7 +155,6 @@ if 'Remember current settings' option is set to True.")>
         Me.SevenZipExePath = New FileInfo("C:\Program Files\7-Zip\7z.exe")
 
         ' 3) User-Interface group
-        Me.CompactMode = False
         Me.RememberSizeAndPosition = False
         Me.SaveSettingsOnExit = False
 
