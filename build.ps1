@@ -1,6 +1,5 @@
 #!/usr/bin/env pwsh
 # Build script for PS3 Quick Disc Decryptor
-# Builds the project in Release configuration
 
 param(
     [Parameter(Mandatory=$false)]
@@ -30,7 +29,8 @@ Write-Host "Checking .NET SDK..." -ForegroundColor Yellow
 try {
     $dotnetVersion = dotnet --version
     Write-Host "✓ .NET SDK found: $dotnetVersion" -ForegroundColor Green
-} catch {
+}
+catch {
     Write-Host "✗ .NET SDK not found!" -ForegroundColor Red
     Write-Host "Please install .NET 6.0 SDK or later from:" -ForegroundColor Yellow
     Write-Host "https://dotnet.microsoft.com/download/dotnet/6.0" -ForegroundColor Yellow
@@ -75,11 +75,7 @@ Write-Host ""
 if ($Publish) {
     Write-Host "Publishing application..." -ForegroundColor Yellow
     $publishPath = "Publish/$Configuration"
-    dotnet publish $ProjectPath `
-        --configuration $Configuration `
-        --output $publishPath `
-        --no-build `
-        --self-contained false
+    dotnet publish $ProjectPath --configuration $Configuration --output $publishPath --no-build --self-contained false
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "✗ Publish failed!" -ForegroundColor Red
