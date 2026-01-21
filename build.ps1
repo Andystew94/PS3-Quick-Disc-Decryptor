@@ -28,10 +28,9 @@ Write-Host ""
 Write-Host "Checking .NET SDK..." -ForegroundColor Yellow
 try {
     $dotnetVersion = dotnet --version
-    Write-Host "✓ .NET SDK found: $dotnetVersion" -ForegroundColor Green
-}
-catch {
-    Write-Host "✗ .NET SDK not found!" -ForegroundColor Red
+    Write-Host "OK .NET SDK found: $dotnetVersion" -ForegroundColor Green
+} catch {
+    Write-Host "ERROR .NET SDK not found!" -ForegroundColor Red
     Write-Host "Please install .NET 6.0 SDK or later from:" -ForegroundColor Yellow
     Write-Host "https://dotnet.microsoft.com/download/dotnet/6.0" -ForegroundColor Yellow
     exit 1
@@ -44,10 +43,10 @@ if ($Clean) {
     Write-Host "Cleaning previous build..." -ForegroundColor Yellow
     dotnet clean $SolutionPath --configuration $Configuration
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "✗ Clean failed!" -ForegroundColor Red
+        Write-Host "ERROR Clean failed!" -ForegroundColor Red
         exit 1
     }
-    Write-Host "✓ Clean completed" -ForegroundColor Green
+    Write-Host "OK Clean completed" -ForegroundColor Green
     Write-Host ""
 }
 
@@ -55,20 +54,20 @@ if ($Clean) {
 Write-Host "Restoring NuGet packages..." -ForegroundColor Yellow
 dotnet restore $SolutionPath
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "✗ Restore failed!" -ForegroundColor Red
+    Write-Host "ERROR Restore failed!" -ForegroundColor Red
     exit 1
 }
-Write-Host "✓ Restore completed" -ForegroundColor Green
+Write-Host "OK Restore completed" -ForegroundColor Green
 Write-Host ""
 
 # Build
 Write-Host "Building project ($Configuration)..." -ForegroundColor Yellow
 dotnet build $SolutionPath --configuration $Configuration --no-restore
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "✗ Build failed!" -ForegroundColor Red
+    Write-Host "ERROR Build failed!" -ForegroundColor Red
     exit 1
 }
-Write-Host "✓ Build completed successfully!" -ForegroundColor Green
+Write-Host "OK Build completed successfully!" -ForegroundColor Green
 Write-Host ""
 
 # Publish if requested
@@ -78,10 +77,10 @@ if ($Publish) {
     dotnet publish $ProjectPath --configuration $Configuration --output $publishPath --no-build --self-contained false
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "✗ Publish failed!" -ForegroundColor Red
+        Write-Host "ERROR Publish failed!" -ForegroundColor Red
         exit 1
     }
-    Write-Host "✓ Publish completed!" -ForegroundColor Green
+    Write-Host "OK Publish completed!" -ForegroundColor Green
     Write-Host "  Output: $publishPath" -ForegroundColor Cyan
     Write-Host ""
 }
@@ -93,4 +92,4 @@ Write-Host "Build Output Location:" -ForegroundColor Cyan
 Write-Host "  $outputPath" -ForegroundColor White
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "✓ All operations completed successfully!" -ForegroundColor Green
+Write-Host "OK All operations completed successfully!" -ForegroundColor Green
