@@ -42,12 +42,16 @@ The decrypted PS3 disc images will work with [RPCS3](https://rpcs3.net/) emulato
 
  - Simple, user-friendly graphical user-interface.
  - Designed for batch processing.
+ - **Smart fuzzy matching** - Automatically suggests likely ISO-to-key matches when exact filename matching fails, with visual confidence indicators.
  - Supports zip archives (for both PS3 disc images and decryption key files).
+ - **Comprehensive failure tracking** - Shows detailed success/failure summary with specific files listed and error reasons.
+ - **Automatic ISO extraction** - Option to extract decrypted ISOs using 7-Zip (fast) or DiscUtils library.
  - Meticulous status report and error handling.
  - Logging features.
  - Allows to abort the decryption procedure on demand.
- - Allows to see PS3Dec.exe output and progress in a embeded window.
- - Allows to automatically delete sucessfully decrypted disc images to save disk space.
+ - Real-time PS3Dec.exe output display with proper DPI scaling.
+ - Automatically deletes successfully decrypted disc images to save disk space (optional).
+ - Prevents cleanup of failed decryptions to allow investigation and retry.
 
 ## 🖼️ Screenshots
 
@@ -55,20 +59,45 @@ The decrypted PS3 disc images will work with [RPCS3](https://rpcs3.net/) emulato
 
 ![screenshot](/Images/Screenshot_07.png)
 
-##### Compact Mode:
-
-![screenshot](/Images/Screenshot_08.png)
-
 ## 📝 Requirements
 
 - Microsoft Windows OS with [net 6.0 desktop runtime](https://dotnet.microsoft.com/download/dotnet/6.0).
 - [Microsoft Visual C++ 2010 runtime (x86)](https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist?view=msvc-170#visual-studio-2010-vc-100-sp1-no-longer-supported) (for running **ps3dec.exe**)
+- **[7-Zip](https://www.7-zip.org/)** (optional, for fast ISO extraction - recommended)
 
 ## 🤖 Getting Started
 
-Download the latest release by clicking [here](https://github.com/ElektroStudios/PS3-Quick-Disc-Decryptor/releases/latest).
-
 Open the program, configure the *self-explanatory* program settings, and finally press the button with name 'Start Decryption'.
+
+### 🔨 Building from Source
+
+For developers who want to build the application from source code, see [BUILD.md](BUILD.md) for comprehensive build instructions, prerequisites, and troubleshooting.
+
+### ✨ New Features Guide
+
+#### Smart Fuzzy Matching
+When ISO filenames don't exactly match decryption key filenames, the program will:
+- Analyze similarity using multiple algorithms (Levenshtein distance, token matching, Game ID extraction)
+- Show a dialog with ranked suggestions and confidence percentages
+- Allow you to accept, skip, or manually select the correct key
+- Display visual confidence indicators (green for high confidence, yellow/orange for medium)
+
+#### ISO Extraction
+After successful decryption, the program can automatically extract ISOs:
+1. Enable "Extract ISOs after decryption" in settings
+2. Choose extraction method:
+   - **7-Zip** (recommended): Fastest, requires 7z.exe installation
+   - **DiscUtils**: Slower, pure .NET library (no external dependencies)
+3. Configure 7-Zip path if using 7-Zip method (default: `C:\Program Files\7-Zip\7z.exe`)
+
+The extraction will be skipped if any decryptions fail, preventing incomplete results.
+
+#### Comprehensive Results
+At the end of each batch operation, you'll see:
+- Summary: "3 succeeded, 1 failed"
+- Complete list of successful files (✓)
+- Complete list of failed files (✗) with specific error reasons
+- Failed ISOs are preserved (not deleted) for investigation
 
 ## 🌐 External resources
 
@@ -144,10 +173,12 @@ Explore the complete list of changes, bug fixes and improvements across differen
 
 ## 🏆 Credits
 
-This work relies on the following resources: 
+This work relies on the following resources:
 
+ - [ElektroStudios's PS3 Quick Disc Decryptor](https://github.com/ElektroStudios/PS3-Quick-Disc-Decryptor) - Original project
  - [al3xtjames's PS3Dec](https://github.com/al3xtjames/PS3Dec)
- - [DiscUtils](https://github.com/discutils/discutils)
+ - [DiscUtils](https://github.com/discutils/discutils) - ISO9660 filesystem reading
+ - [7-Zip](https://www.7-zip.org/) - Fast ISO extraction (optional)
  - [WinCopies Windows API Code Pack](https://wincopies.com/windows_api_codepack/)
  - [Redump Disc Preservation Project's PS3 resources](http://redump.org/discs/system/ps3/)
 
@@ -161,34 +192,3 @@ This work relies on the following resources:
 This Work (the repository and the content provided in) is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages or other liability, whether in an action of contract, tort or otherwise, arising from, out of or in connection with the Work or the use or other dealings in the Work.
 
 This Work has no affiliation, approval or endorsement by Sony neither by the author(s) of any third-party resources used by this Work.
-
-## 💪 Contributing
-
-Your contribution is highly appreciated!. If you have any ideas, suggestions, or encounter issues, feel free to open an issue by clicking [here](https://github.com/ElektroStudios/PS3-Quick-Disc-Decryptor/issues/new/choose). 
-
-Your input helps make this Work better for everyone. Thank you for your support! 🚀
-
-## 💰 Beyond Contribution 
-
-This work is distributed for educational purposes and without any profit motive. However, if you find value in my efforts and wish to support and motivate my ongoing work, you may consider contributing financially through the following options:
-
-<br></br>
-<p align="center"><img src="/Images/github_circle.png" height=100></p>
-<p align="center">__________________</p>
-<h3 align="center">Becoming my sponsor on Github:</h3>
-<p align="center">You can show me your support by clicking <a href="https://github.com/sponsors/ElektroStudios/">here</a>, <br align="center">contributing any amount you prefer, and unlocking rewards!</br></p>
-<br></br>
-
-<p align="center"><img src="/Images/paypal_circle.png" height=100></p>
-<p align="center">__________________</p>
-<h3 align="center">Making a Paypal Donation:</h3>
-<p align="center">You can donate to me any amount you like via Paypal by clicking <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=E4RQEV6YF5NZY">here</a>.</p>
-<br></br>
-
-<p align="center"><img src="/Images/envato_circle.png" height=100></p>
-<p align="center">__________________</p>
-<h3 align="center">Purchasing software of mine at Envato's Codecanyon marketplace:</h3>
-<p align="center">If you are a .NET developer, you may want to explore '<b>DevCase Class Library for .NET</b>', <br align="center">a huge set of APIs that I have on sale. Check out the product by clicking <a href="https://codecanyon.net/item/elektrokit-class-library-for-net/19260282">here</a></br><br align="center"><i>It also contains all piece of reusable code that you can find across the source code of my open source works.</i></p>
-<br></br>
-
-<h2 align="center"><u>Your support means the world to me! Thank you for considering it!</u> 👍</h2>
