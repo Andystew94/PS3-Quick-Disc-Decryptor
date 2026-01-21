@@ -35,6 +35,11 @@ Friend NotInheritable Class Form1
     Private isoAndKeyPairs As IDictionary(Of FileInfo, FileInfo)
 
     ''' <summary>
+    ''' Tracks decryption results for each ISO.
+    ''' </summary>
+    Private decryptionResults As New List(Of DecryptionResult)()
+
+    ''' <summary>
     ''' Directory where to unzip zipped isos and decryption keys.
     ''' </summary>
     Private ReadOnly tempFolderPath As String = Path.Combine(Path.GetTempPath, My.Application.Info.Title)
@@ -144,6 +149,9 @@ Friend NotInheritable Class Form1
     Private Sub BackgroundWorker1_DoWork(sender As Object, e As DoWorkEventArgs) _
     Handles BackgroundWorker1.DoWork
 
+        ' Clear previous results
+        Me.decryptionResults.Clear()
+
         Me.UpdateStatus($"Starting a new decryption procedure...", writeToLogFile:=True)
         Me.ResetProgressBar()
 
@@ -178,9 +186,15 @@ Friend NotInheritable Class Form1
             Next
         End If
 
-        ' Extract ISOs if option is enabled and decryption wasn't cancelled
+        ' Extract ISOs if option is enabled, decryption wasn't cancelled, and all decryptions succeeded
         If Form1.Settings.ExtractISOsAfterDecryption AndAlso Not e.Cancel Then
-            Me.ExtractDecryptedISOs()
+            Dim failedResults As IEnumerable(Of DecryptionResult) = Me.decryptionResults.Where(Function(r) Not r.Success)
+            Dim failedCount As Integer = failedResults.Count()
+            If failedCount = 0 Then
+                Me.ExtractDecryptedISOs()
+            Else
+                Me.UpdateStatus($"Skipping ISO extraction due to {failedCount} failed decryption(s).", writeToLogFile:=True, TraceEventType.Warning)
+            End If
         End If
     End Sub
 
@@ -201,14 +215,45 @@ Friend NotInheritable Class Form1
         ElseIf e.Cancelled Then
             Me.UpdateStatus("Decryption procedure cancelled due an error.", writeToLogFile:=True, TraceEventType.Stop)
         Else
-            Me.UpdateStatus("Decryption procedure completed.", writeToLogFile:=True)
+            ' Build summary message
+            Dim successResults As IEnumerable(Of DecryptionResult) = Me.decryptionResults.Where(Function(r) r.Success)
+            Dim failedResults As IEnumerable(Of DecryptionResult) = Me.decryptionResults.Where(Function(r) Not r.Success)
+            Dim successCount As Integer = successResults.Count()
+            Dim failedCount As Integer = failedResults.Count()
+            Dim totalCount As Integer = Me.decryptionResults.Count
 
-            Dim completionMessage As String = "Decryption procedure completed."
-            If Form1.Settings.ExtractISOsAfterDecryption Then
-                completionMessage &= vbCrLf & "ISO extraction completed."
+            Dim summaryMessage As String = $"Decryption completed: {successCount} succeeded"
+            If failedCount > 0 Then
+                summaryMessage &= $", {failedCount} failed"
             End If
 
-            Form1.ShowMessageBoxInUIThread(Me, My.Application.Info.Title, completionMessage, MessageBoxIcon.Information)
+            Me.UpdateStatus(summaryMessage, writeToLogFile:=True)
+
+            ' Build detailed completion message
+            Dim completionMessage As New StringBuilder()
+            completionMessage.AppendLine($"Decryption Results:")
+            completionMessage.AppendLine($"  Success: {successCount}/{totalCount}")
+            If failedCount > 0 Then
+                completionMessage.AppendLine($"  Failed: {failedCount}/{totalCount}")
+                completionMessage.AppendLine()
+                completionMessage.AppendLine("Failed files:")
+                For Each result As DecryptionResult In failedResults
+                    completionMessage.AppendLine($"  • {result.IsoFile.Name}")
+                    If Not String.IsNullOrEmpty(result.ErrorMessage) Then
+                        completionMessage.AppendLine($"    Reason: {result.ErrorMessage}")
+                    Else
+                        completionMessage.AppendLine($"    Exit code: {result.ExitCode}")
+                    End If
+                Next
+            End If
+
+            If Form1.Settings.ExtractISOsAfterDecryption AndAlso failedCount = 0 Then
+                completionMessage.AppendLine()
+                completionMessage.AppendLine("ISO extraction completed.")
+            End If
+
+            Dim icon As MessageBoxIcon = If(failedCount > 0, MessageBoxIcon.Warning, MessageBoxIcon.Information)
+            Form1.ShowMessageBoxInUIThread(Me, My.Application.Info.Title, completionMessage.ToString(), icon)
         End If
 
         Try
@@ -482,6 +527,8 @@ Friend NotInheritable Class Form1
 
         Dim dkeyString As String = Nothing
         If Not Me.ReadDecryptionKey(pair.Value, dkeyString, percentage, currentIsoIndex, totalIsoCount) Then
+            ' Track as failed
+            Me.decryptionResults.Add(New DecryptionResult(pair.Key, pair.Value, success:=False, exitCode:=-1, errorMessage:="Failed to read decryption key"))
             Exit Sub
         End If
 
@@ -489,11 +536,15 @@ Friend NotInheritable Class Form1
         Dim sizeString As String = Me.FormatFileSize(refIso.Length, StrFormatByteSizeFlags.RoundToNearest)
 
         If Not Me.ValidatePS3Iso(refIso, percentage, currentIsoIndex, totalIsoCount) Then
+            ' Track as failed
+            Me.decryptionResults.Add(New DecryptionResult(pair.Key, pair.Value, success:=False, exitCode:=-1, errorMessage:="ISO validation failed"))
             Exit Sub
         End If
 
         Me.UpdateStatus($"{percentage}% ({currentIsoIndex}/{totalIsoCount}) | {refIso.Name} | Writing decrypted PS3 ISO ({sizeString}) to output directory...", writeToLogFile:=True)
         If Not Me.EnsureOutputDirectoryExists() Then
+            ' Track as failed
+            Me.decryptionResults.Add(New DecryptionResult(pair.Key, pair.Value, success:=False, exitCode:=-1, errorMessage:="Failed to create output directory"))
             Exit Sub
         End If
 
@@ -501,10 +552,13 @@ Friend NotInheritable Class Form1
         Dim requiredSizeString As String = Me.FormatFileSize(refIso.Length, StrFormatByteSizeFlags.RoundToNearest)
         If Not Me.DriveHasFreeSpace(drive, refIso.Length) Then
             Form1.ShowMessageBoxInUIThread(Me, $"Error writing decrypted PS3 ISO.", $"Drive {drive} requires {requiredSizeString} of free space to write the file.", MessageBoxIcon.Error)
+            ' Track as failed
+            Me.decryptionResults.Add(New DecryptionResult(pair.Key, pair.Value, success:=False, exitCode:=-1, errorMessage:="Insufficient disk space"))
             Exit Sub
         End If
 
-        Me.ExecutePS3Dec(pair, refIso, dkeyString, currentIsoIndex, totalIsoCount)
+        Dim result As DecryptionResult = Me.ExecutePS3Dec(pair, refIso, dkeyString, currentIsoIndex, totalIsoCount)
+        Me.decryptionResults.Add(result)
 
     End Sub
 
@@ -566,7 +620,7 @@ Friend NotInheritable Class Form1
         Return True
     End Function
 
-    Private Sub ExecutePS3Dec(pair As KeyValuePair(Of FileInfo, FileInfo), isoFile As FileInfo, dkeyString As String, currentIsoIndex As Integer, totalIsoCount As Integer)
+    Private Function ExecutePS3Dec(pair As KeyValuePair(Of FileInfo, FileInfo), isoFile As FileInfo, dkeyString As String, currentIsoIndex As Integer, totalIsoCount As Integer) As DecryptionResult
 
         ' Run PS3Dec.exe and capture output to TextBox
         Me.ps3DecProcess = New Process()
@@ -623,18 +677,22 @@ Friend NotInheritable Class Form1
 
         Catch ex As Exception
             Form1.ShowMessageBoxInUIThread(Me, "Error executing PS3Dec.exe", ex.Message, MessageBoxIcon.Error)
-            Exit Sub
+            Return New DecryptionResult(pair.Key, pair.Value, success:=False, exitCode:=-1, errorMessage:=ex.Message)
         End Try
 
-        If Me.ps3DecProcess.ExitCode = 0 Then
-            Dim percentage As Integer = CInt(currentIsoIndex / totalIsoCount * 100)
+        Dim success As Boolean = (Me.ps3DecProcess.ExitCode = 0)
+        Dim percentage As Integer = CInt(currentIsoIndex / totalIsoCount * 100)
+
+        If success Then
             Me.UpdateStatus($"{percentage}% ({currentIsoIndex}/{totalIsoCount}) | {isoFile.Name} | Decryption completed.", writeToLogFile:=True)
             Me.CanDeleteEncryptedISO(pair.Key)
             Me.CanDeleteDecryptionKey(pair.Value)
         Else
-            Me.UpdateStatus($"PS3Dec.exe failed to decrypt, with process exit code: {Me.ps3DecProcess.ExitCode}", writeToLogFile:=True)
+            Me.UpdateStatus($"{percentage}% ({currentIsoIndex}/{totalIsoCount}) | {isoFile.Name} | FAILED with exit code: {Me.ps3DecProcess.ExitCode}", writeToLogFile:=True, TraceEventType.Error)
         End If
-    End Sub
+
+        Return New DecryptionResult(pair.Key, pair.Value, success, Me.ps3DecProcess.ExitCode)
+    End Function
 
     Private Sub CanDeleteEncryptedISO(iso As FileInfo)
         If Form1.Settings.DeleteDecryptedISOs Then
@@ -1102,3 +1160,22 @@ Module FileSystemInfoExtensions
         Return New DriveInfo(driveName)
     End Function
 End Module
+
+''' <summary>
+''' Tracks the result of a single ISO decryption operation.
+''' </summary>
+Friend Class DecryptionResult
+    Public Property IsoFile As FileInfo
+    Public Property KeyFile As FileInfo
+    Public Property Success As Boolean
+    Public Property ExitCode As Integer
+    Public Property ErrorMessage As String
+
+    Public Sub New(isoFile As FileInfo, keyFile As FileInfo, success As Boolean, exitCode As Integer, Optional errorMessage As String = Nothing)
+        Me.IsoFile = isoFile
+        Me.KeyFile = keyFile
+        Me.Success = success
+        Me.ExitCode = exitCode
+        Me.ErrorMessage = errorMessage
+    End Sub
+End Class
